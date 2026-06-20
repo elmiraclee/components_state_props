@@ -1,98 +1,344 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useRef, useState, useCallback } from 'react';
+import {
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  View,
+  Animated,
+} from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import CounterButton from '../../components/CounterButton';
+
+const RESET_VALUE = 100;
+const MAX_HISTORY = 20;
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const [count, setCount] = useState(RESET_VALUE);
+  const [statMin, setStatMin] = useState(RESET_VALUE);
+  const [statMax, setStatMax] = useState(RESET_VALUE);
+  const [changes, setChanges] = useState(0);
+  const [history, setHistory] = useState<number[]>([RESET_VALUE]);
+  const [toast, setToast] = useState('');
+  const [toastVisible, setToastVisible] = useState(false);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const addInterval = useRef<any>(null);
+  const minusInterval = useRef<any>(null);
+  const toastTimer = useRef<any>(null);
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    clearTimeout(toastTimer.current);
+    Animated.sequence([
+      Animated.timing(toastOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+      Animated.delay(1000),
+      Animated.timing(toastOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start();
+  }, [toastOpacity]);
+
+  const bumpAnimation = useCallback(() => {
+    Animated.sequence([
+      Animated.timing(scaleAnim, { toValue: 1.15, duration: 70, useNativeDriver: true }),
+      Animated.timing(scaleAnim, { toValue: 1, duration: 70, useNativeDriver: true }),
+    ]).start();
+  }, [scaleAnim]);
+
+  const updateCount = useCallback((updater: (prev: number) => number) => {
+    setCount(prev => {
+      const next = updater(prev);
+      setStatMin(m => Math.min(m, next));
+      setStatMax(m => Math.max(m, next));
+      setChanges(c => c + 1);
+      setHistory(h => {
+        const updated = [...h, next];
+        return updated.length > MAX_HISTORY ? updated.slice(-MAX_HISTORY) : updated;
+      });
+      bumpAnimation();
+      return next;
+    });
+  }, [bumpAnimation]);
+
+  // Add
+  const addCount = () => updateCount(prev => prev + 1);
+  const startAdding = () => {
+    showToast('Holding add...');
+    addInterval.current = setInterval(() => updateCount(prev => prev + 1), 80);
+  };
+  const stopAdding = () => {
+    if (addInterval.current) clearInterval(addInterval.current);
+  };
+
+  // Minus
+  const minusCount = () => updateCount(prev => prev - 1);
+  const startMinus = () => {
+    showToast('Holding minus...');
+    minusInterval.current = setInterval(() => updateCount(prev => prev - 1), 80);
+  };
+  const stopMinus = () => {
+    if (minusInterval.current) clearInterval(minusInterval.current);
+  };
+
+  // Reset
+  const resetCount = () => {
+    setCount(RESET_VALUE);
+    setStatMin(RESET_VALUE);
+    setStatMax(RESET_VALUE);
+    setChanges(0);
+    setHistory([RESET_VALUE]);
+    bumpAnimation();
+    showToast('Reset to 100');
+  };
+
+  const countColor =
+    count > 0 ? '#00E5A8' : count < 0 ? '#ff6b6b' : '#B8B8D1';
+
+  // Progress bar: maps -200..200 → 0..100%
+  const progressPct = Math.min(100, Math.max(0, ((count + 200) / 400) * 100));
+  const progressColor = count >= 0 ? '#00E5A8' : '#ff6b6b';
+
+  // Sparkline
+  const histMin = Math.min(...history);
+  const histMax = Math.max(...history);
+  const histRange = Math.max(1, histMax - histMin);
+  const BAR_MAX_H = 28;
+
+  return (
+    <View style={styles.maincontainer}>
+      <SafeAreaView style={styles.container}>
+        <Text style={styles.parentTitle}>Counter Display</Text>
+
+        {/* State Locker */}
+        <View style={styles.stateLocker}>
+
+          {/* Toast */}
+          <Animated.View style={[styles.toast, { opacity: toastOpacity }]}>
+            <Text style={styles.toastText}>{toast}</Text>
+          </Animated.View>
+
+          <Text style={styles.stateTitle}>STATE LOCKER</Text>
+
+          <Animated.Text
+            style={[styles.stateValue, { color: countColor, transform: [{ scale: scaleAnim }] }]}
+          >
+            {count}
+          </Animated.Text>
+
+          {/* Progress bar */}
+          <View style={styles.progressTrack}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${progressPct}%` as any, backgroundColor: progressColor },
+              ]}
+            />
+          </View>
+
+          {/* Mini stats */}
+          <View style={styles.statsRow}>
+            <View style={styles.stat}>
+              <Text style={styles.statLabel}>MIN</Text>
+              <Text style={styles.statValue}>{statMin}</Text>
+            </View>
+            <View style={styles.stat}>
+              <Text style={styles.statLabel}>MAX</Text>
+              <Text style={styles.statValue}>{statMax}</Text>
+            </View>
+            <View style={styles.stat}>
+              <Text style={styles.statLabel}>CHANGES</Text>
+              <Text style={styles.statValue}>{changes}</Text>
+            </View>
+          </View>
+
+          {/* Sparkline */}
+          {history.length > 1 && (
+            <View style={styles.sparkline}>
+              {history.map((v, i) => {
+                const h = Math.max(3, Math.round(((v - histMin) / histRange) * BAR_MAX_H));
+                const barColor =
+                  v >= RESET_VALUE ? '#00E5A8' : v < 0 ? '#ff6b6b' : '#B8B8D1';
+                return (
+                  <View
+                    key={i}
+                    style={[
+                      styles.sparkBar,
+                      { height: h, backgroundColor: barColor, opacity: 0.7 },
+                    ]}
+                  />
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        {/* Controls */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Counter Controls</Text>
+
+          <CounterButton
+            title="➕  Add Count"
+            backgroundColor="#4a7c18"
+            onPress={addCount}
+            onLongPress={startAdding}
+            onPressOut={stopAdding}
+          />
+
+          <CounterButton
+            title="➖  Minus Count"
+            backgroundColor="#1a6b3a"
+            onPress={minusCount}
+            onLongPress={startMinus}
+            onPressOut={stopMinus}
+          />
+
+          <CounterButton
+            title="🔄  Reset Count"
+            backgroundColor="#555"
+            onPress={resetCount}
+          />
+        </View>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  maincontainer: {
+    flex: 1,
+    backgroundColor: '#1E1E2E',
   },
-  stepContainer: {
-    gap: 8,
+
+  container: {
+    flex: 1,
+    padding: 25,
+    justifyContent: 'center',
+  },
+
+  parentTitle: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 30,
+    letterSpacing: 1,
+  },
+
+  stateLocker: {
+    backgroundColor: '#2A2D3E',
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    borderWidth: 0.5,
+    borderColor: '#3a3d55',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    elevation: 8,
+    marginBottom: 25,
+    overflow: 'hidden',
+  },
+
+  toast: {
+    position: 'absolute',
+    top: 12,
+    right: 14,
+    backgroundColor: '#3a3d55',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    zIndex: 10,
+  },
+  toastText: {
+    color: '#B8B8D1',
+    fontSize: 12,
+  },
+
+  stateTitle: {
+    color: '#B8B8D1',
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 2,
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+
+  stateValue: {
+    fontSize: 80,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    lineHeight: 88,
+  },
+
+  progressTrack: {
+    height: 4,
+    backgroundColor: '#3a3d55',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginTop: 14,
+    marginHorizontal: 4,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+
+  statsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  stat: {
+    flex: 1,
+    backgroundColor: '#1E1E2E',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  statLabel: {
+    color: '#6b6e8a',
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+  statValue: {
+    color: '#B8B8D1',
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 3,
+  },
+
+  sparkline: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    height: 32,
+    marginTop: 14,
+    gap: 3,
+  },
+  sparkBar: {
+    width: 10,
+    borderRadius: 3,
+    minHeight: 3,
+  },
+
+  card: {
+    backgroundColor: '#2A2D3E',
+    borderRadius: 20,
+    padding: 25,
+    borderWidth: 0.5,
+    borderColor: '#3a3d55',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+
+  cardTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 20,
   },
 });
